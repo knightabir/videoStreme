@@ -3,17 +3,14 @@ package com.abir.stream.controller;
 import com.abir.stream.model.Video;
 import com.abir.stream.service.VideoService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.*;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,136 +22,67 @@ import java.util.Map;
 public class VideoController {
 
     @Autowired
-    private  VideoService videoService;
+    private VideoService videoService;
     @Autowired
-    private  ResourceLoader resourceLoader;
+    private ResourceLoader resourceLoader;
 
 
+    @Value(value = "${files.video}")
+    private String VIDEO_DIR;
 
-    @GetMapping("/stream/{videoId}")
+    @GetMapping("/stream/{videoId}/index.m3u8")
     public ResponseEntity<Resource> streamVideo(
-            @PathVariable String videoId,
-            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
+            @PathVariable String videoId
+    ) throws Exception {
+        System.out.println(videoId);
 
-        try {
-            System.out.println("Video Id : "+videoId);
-            // Fetch the video metadata
-            Video video = videoService.findById(videoId);
+        Video video = videoService.findById(videoId);
 
-            if (video == null) {
-                return ResponseEntity.notFound().build();
-            }
+        String url = video.getFilePath();
+        Path path = Path.of(url);
+        System.out.println(path);
 
-            // Construct the path to the HLS playlist
-            Path playlistPath = Paths.get(video.getFilePath());
-
-            // Check if the playlist file exists
-            if (!Files.exists(playlistPath)) {
-                return ResponseEntity.notFound().build();
-            }
-
-            // Load the file as a resource
-            Resource resource = new FileSystemResource(playlistPath);
-            String contentType = "application/vnd.apple.mpegurl";
-            long fileLength = Files.size(playlistPath);
-
-            if (rangeHeader != null) {
-                try {
-                    // Handle range requests for seeking
-                    String[] ranges = rangeHeader.replace("bytes=", "").split("-");
-                    long rangeStart = Long.parseLong(ranges[0]);
-                    long rangeEnd = ranges.length > 1 ? Long.parseLong(ranges[1]) : fileLength - 1;
-
-                    // Validate range end
-                    if (rangeEnd >= fileLength) {
-                        rangeEnd = fileLength - 1;
-                    }
-
-                    // Validate range start
-                    if (rangeStart > rangeEnd) {
-                        return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                                .header(HttpHeaders.CONTENT_RANGE, "bytes */" + fileLength)
-                                .build();
-                    }
-
-                    // Calculate content length
-                    long contentLength = rangeEnd - rangeStart + 1;
-
-                    // Prepare headers
-                    HttpHeaders headers = new HttpHeaders();
-                    headers.add(HttpHeaders.CONTENT_RANGE, "bytes " + rangeStart + "-" + rangeEnd + "/" + fileLength);
-                    headers.add(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
-                    headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
-                    headers.add(HttpHeaders.PRAGMA, "no-cache");
-                    headers.add(HttpHeaders.EXPIRES, "0");
-                    headers.add(HttpHeaders.CONTENT_TYPE, contentType);
-
-                    // Serve the partial content
-                    InputStream inputStream = Files.newInputStream(playlistPath);
-                    inputStream.skip(rangeStart);
-
-                    return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-                            .headers(headers)
-                            .body(new InputStreamResource(inputStream));
-                } catch (NumberFormatException e) {
-                    return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-                            .header(HttpHeaders.CONTENT_RANGE, "bytes */" + fileLength)
-                            .build();
-                }
-            } else {
-                // Serve the full content
-                HttpHeaders headers = new HttpHeaders();
-                headers.add(HttpHeaders.CONTENT_TYPE, contentType);
-                headers.add(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileLength));
-                headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
-                headers.add(HttpHeaders.PRAGMA, "no-cache");
-                headers.add(HttpHeaders.EXPIRES, "0");
-                System.out.println(resource.toString());
-                return ResponseEntity.ok()
-                        .headers(headers)
-                        .body(resource);
-            }
-
-        } catch (IOException e) {
-            // Handle IOException
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        } catch (Exception e) {
-            // Handle other exceptions
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        if (!Files.exists(path)) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
+
+        Resource resource = new FileSystemResource(path);
+
+        return ResponseEntity
+                .ok()
+                .header(
+                        HttpHeaders.CONTENT_TYPE, "application/vnd.apple.mpegurl"
+                )
+                .body(resource);
     }
 
-//    @GetMapping("/stream/{videoId}")
-//    public ResponseEntity<Resource> streamVideo(@PathVariable String videoId) {
-//        try {
-//            // Assuming videoService.getHlsPlaylistPath(videoId) returns the full path to the HLS playlist
-//            Path videoPath = videoService.getHlsPlaylistPath(videoId);
-//
-//            // Ensure the path is valid and points to the correct file
-//            Resource resource = new UrlResource(videoPath.toUri());
-//
-//            if (resource.exists() && resource.isReadable()) {
-//                return ResponseEntity.ok()
-//                        .header(HttpHeaders.CONTENT_TYPE, MediaType.valueOf("application/x-mpegURL").toString())
-//                        .body(resource);
-//            } else {
-//                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-//            }
-//        } catch (IOException e) {
-//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-//        }
-//    }
 
+    @GetMapping("/stream/{videoId}/{segment}")
+    public ResponseEntity<Resource> serveSegments(
+            @PathVariable String videoId,
+            @PathVariable String segment
+    ) throws Exception {
+        Video video = videoService.findById(videoId);
 
+        String url = video.getFilePath();
+        url = url.replace("index.m3u8", "");
+        Path path = Path.of(url);
+        System.out.println(path);
+        System.out.println(segment);
 
+        if (!Files.exists(path)) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
 
+        Resource resource = new FileSystemResource(path);
 
-
-
-
-
+        return ResponseEntity
+                .ok()
+                .header(
+                        HttpHeaders.CONTENT_TYPE, "video/mp2t"
+                )
+                .body(resource);
+    }
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(
@@ -198,9 +126,9 @@ public class VideoController {
         List<Video> videos = new ArrayList<>();
         videos.add(videoService.findById(id));
         Map<String, Object> response = new HashMap<>();
-        response.put("status",true);
-        response.put("code",HttpStatus.OK.value());
-        response.put("data",videos);
+        response.put("status", true);
+        response.put("code", HttpStatus.OK.value());
+        response.put("data", videos);
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -213,10 +141,10 @@ public class VideoController {
         data.add(videoService.updateVideoDetails(id, video));
 
         Map<String, Object> response = new HashMap<>();
-        response.put("status",true);
-        response.put("message","Video updated successfully..");
-        response.put("code",HttpStatus.OK.value());
-        response.put("data",data);
+        response.put("status", true);
+        response.put("message", "Video updated successfully..");
+        response.put("code", HttpStatus.OK.value());
+        response.put("data", data);
 
         return ResponseEntity
                 .status(HttpStatus.OK.value())
@@ -241,75 +169,11 @@ public class VideoController {
     public ResponseEntity<?> deleteVideo(@PathVariable String id) throws Exception {
         videoService.deleteById(id);
         Map<String, Object> response = new HashMap<>();
-        response.put("status",true);
-        response.put("message","Video Deleted Successfully");
-        response.put("code",200);
+        response.put("status", true);
+        response.put("message", "Video Deleted Successfully");
+        response.put("code", 200);
         return ResponseEntity
                 .status(200)
                 .body(response);
     }
-
-//    @GetMapping("/stream/range/{videoId}")
-//    public ResponseEntity<Resource> streamVideoRange(
-//            @PathVariable String videoId,
-//            @RequestHeader(value = "Range", required = false) String range
-//    ) {
-//        try {
-//            Video video = videoService.findById(videoId);
-//            Path path = Paths.get(video.getFilePath());
-//
-//            if (!Files.exists(path)) {
-//                return ResponseEntity.notFound().build();
-//            }
-//
-//            Resource resource = new FileSystemResource(path);
-//            String contentType = video.getContentType() != null ? video.getContentType() : "application/octet-stream";
-//            long fileLength = Files.size(path);
-//
-//            if (range == null) {
-//                return ResponseEntity.ok()
-//                        .contentType(MediaType.parseMediaType(contentType))
-//                        .body(resource);
-//            }
-//
-//            long rangeStart;
-//            long rangeEnd;
-//
-//            String[] ranges = range.replace("bytes=", "").split("-");
-//            rangeStart = Long.parseLong(ranges[0]);
-//            rangeEnd = ranges.length > 1 ? Long.parseLong(ranges[1]) : fileLength - 1;
-//
-//            if (rangeEnd > fileLength - 1) {
-//                rangeEnd = fileLength - 1;
-//            }
-//
-//            if (rangeStart > rangeEnd) {
-//                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-//                        .header(HttpHeaders.CONTENT_RANGE, "bytes */" + fileLength)
-//                        .build();
-//            }
-//
-//            InputStream inputStream = Files.newInputStream(path);
-//            inputStream.skip(rangeStart);
-//
-//            long contentLength = rangeEnd - rangeStart + 1;
-//
-//            HttpHeaders headers = new HttpHeaders();
-//            headers.add(HttpHeaders.CONTENT_RANGE, "bytes " + rangeStart + "-" + rangeEnd + "/" + fileLength);
-//            headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
-//            headers.add(HttpHeaders.PRAGMA, "no-cache");
-//            headers.add(HttpHeaders.EXPIRES, "0");
-//            headers.add(HttpHeaders.CONTENT_TYPE, "nosniff");
-//            headers.setContentLength(contentLength);
-//
-//            return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-//                    .headers(headers)
-//                    .contentType(MediaType.parseMediaType(contentType))
-//                    .body(new InputStreamResource(inputStream));
-//        } catch (IOException ex) {
-//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-//        } catch (Exception e) {
-//            throw new RuntimeException(e);
-//        }
-//    }
 }

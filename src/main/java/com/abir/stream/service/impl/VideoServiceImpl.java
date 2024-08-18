@@ -152,53 +152,6 @@ public class VideoServiceImpl implements VideoService {
     }
 
 
-
-
-//    @Override
-//    public void saveVideo(Video video, MultipartFile file) throws IOException {
-//        try {
-//            // Get the original filename and content type
-//            String filename = file.getOriginalFilename();
-//            String contentType = file.getContentType();
-//            InputStream inputStream = file.getInputStream();
-//
-//            // Generate a UUID for the file and determine the new filename
-//            String uuid = UUID.randomUUID().toString();
-//            String extension = filename != null ? filename.substring(filename.lastIndexOf('.')) : "";
-//            String newFilename = uuid + extension;
-//
-//            // Clean and define the folder path
-//            String cleanFolder = StringUtils.cleanPath(DIR);
-//
-//            // Create the target directory if it does not exist
-//            Path directoryPath = Paths.get(cleanFolder);
-//            if (!Files.exists(directoryPath)) {
-//                Files.createDirectories(directoryPath);
-//            }
-//
-//            // Define the full path for the file
-//            Path filePath = directoryPath.resolve(newFilename);
-//
-//            // Log information
-//            logger.info("Content Type: " + contentType);
-//            logger.info("File Path: " + filePath.toString());
-//
-//            // Copy the file to the target location
-//            Files.copy(inputStream, filePath, StandardCopyOption.REPLACE_EXISTING);
-//
-//            // Set the video metadata
-//            video.setContentType(contentType);
-//            video.setFilePath(filePath.toString());
-//            video.setCreatedAt(Date.from(Instant.now()));
-//
-//            // Save the video metadata
-//            videoRepository.save(video);
-//
-//        } catch (IOException e) {
-//            logger.error("Error occurred while saving video: ", e);
-//        }
-//    }
-
     @Override
     public Video updateVideoDetails(String id, Video video) throws Exception {
         Video existingVideo = findById(id);
